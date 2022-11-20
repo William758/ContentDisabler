@@ -7,6 +7,11 @@ using RoR2.ContentManagement;
 
 using System.Security;
 using System.Security.Permissions;
+using UnityEngine;
+using MonoMod.Cil;
+using Mono.Cecil.Cil;
+using System;
+using System.Linq;
 
 [module: UnverifiableCode]
 #pragma warning disable CS0618 // Type or member is obsolete
@@ -19,7 +24,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.0.0";
+		public const string ModVer = "1.0.1";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -27,6 +32,8 @@ namespace TPDespair.ContentDisabler
 		public static ManualLogSource logSource;
 
 		public static Dictionary<string, int> ConfigKeys = new Dictionary<string, int>();
+
+		public static List<SurvivorDef> DisabledSurvivors = new List<SurvivorDef>();
 
 
 
@@ -37,11 +44,14 @@ namespace TPDespair.ContentDisabler
 
 			On.RoR2.ItemCatalog.Init += ItemCatalogInit;
 			On.RoR2.EquipmentCatalog.Init += EquipmentCatalogInit;
+			On.RoR2.SurvivorCatalog.Init += SurvivorCatalogInit;
+			On.RoR2.UI.LogBook.LogBookController.CanSelectSurvivorBodyEntry += LogBookControllerCanSelectSurvivorBodyEntry;
+            IL.RoR2.CharacterMaster.PickRandomSurvivorBodyPrefab += CharacterMasterPickRandomSurvivorBodyPrefab;
 		}
 
+        
 
-
-		private static void ItemCatalogInit(On.RoR2.ItemCatalog.orig_Init orig)
+        private static void ItemCatalogInit(On.RoR2.ItemCatalog.orig_Init orig)
 		{
 			foreach (ItemDef itemDef in ContentManager.itemDefs)
 			{
@@ -86,6 +96,82 @@ namespace TPDespair.ContentDisabler
 			}
 
 			orig();
+		}
+
+		private static void SurvivorCatalogInit(On.RoR2.SurvivorCatalog.orig_Init orig)
+		{
+			foreach (SurvivorDef survivorDef in ContentManager.survivorDefs)
+			{
+				string name = ((ScriptableObject)survivorDef).name;
+				if (name == "") name = survivorDef.displayNameToken;
+				if (name == "") name = "UnknownSurvivor";
+
+				ConfigEntry<bool> configEntry = ConfigEntry("Survivor", name, false, "Disable Survivor : " + name);
+				if (configEntry.Value)
+				{
+					survivorDef.hidden = true;
+
+					if (!DisabledSurvivors.Contains(survivorDef))
+					{
+						DisabledSurvivors.Add(survivorDef);
+					}
+
+					LogWarn("Disabled Survivor : " + name);
+				}
+			}
+
+			orig();
+		}
+
+		private bool LogBookControllerCanSelectSurvivorBodyEntry(On.RoR2.UI.LogBook.LogBookController.orig_CanSelectSurvivorBodyEntry orig, CharacterBody body, Dictionary<RoR2.ExpansionManagement.ExpansionDef, bool> expansionAvailability)
+		{
+			if (body)
+			{
+				SurvivorDef survivorDef = SurvivorCatalog.GetSurvivorDef(SurvivorCatalog.GetSurvivorIndexFromBodyIndex(body.bodyIndex));
+				if (survivorDef)
+				{
+					if (DisabledSurvivors.Contains(survivorDef)) return false;
+				}
+			}
+
+			return orig(body, expansionAvailability);
+		}
+
+		private void CharacterMasterPickRandomSurvivorBodyPrefab(ILContext il)
+		{
+			ILCursor c = new ILCursor(il);
+
+			bool found = c.TryGotoNext(
+				x => x.MatchStloc(1)
+			);
+
+			if (found)
+			{
+				c.Index += 1;
+
+				c.Emit(OpCodes.Ldloc, 1);
+				c.EmitDelegate<Func<SurvivorDef[], SurvivorDef[]>>((survivorDefs) =>
+				{
+					List<SurvivorDef> survivorDefsList = survivorDefs.ToList();
+
+					foreach (SurvivorDef survivorDef in DisabledSurvivors)
+					{
+						if (survivorDefsList.Contains(survivorDef))
+						{
+							survivorDefsList.Remove(survivorDef);
+
+							//LogWarn("Removed Survivor [" + name + "] from Metamorph Choices.");
+						}
+					}
+
+					return survivorDefsList.ToArray();
+				});
+				c.Emit(OpCodes.Stloc, 1);
+			}
+			else
+			{
+				LogWarn("PickRandomSurvivorHook Failed");
+			}
 		}
 
 

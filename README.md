@@ -14,6 +14,10 @@ Probably does not prevent items from showing up by other means (untested) :
 
 - HelperItems, FixedRewards, ItemTransformation, BossRewards
 
+Create a hide config for every survivor.
+
+- Removes survivor from the logbook and prevents survivor from being picked in character select or from rolling in metamorphosis.
+
 ## Installation:
 
 Requires Bepinex and HookGenPatcher.
@@ -21,5 +25,7 @@ Requires Bepinex and HookGenPatcher.
 Use r2modman or place inside of Risk of Rain 2/Bepinex/Plugins/
 
 ## Changelog:
+
+v1.0.1 - Added Survivor disabling.
 
 v1.0.0 - Initial Release.
