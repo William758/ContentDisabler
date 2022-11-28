@@ -1,4 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Linq;
+using System.Collections.Generic;
+using UnityEngine;
+using MonoMod.Cil;
+using Mono.Cecil.Cil;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -7,11 +12,6 @@ using RoR2.ContentManagement;
 
 using System.Security;
 using System.Security.Permissions;
-using UnityEngine;
-using MonoMod.Cil;
-using Mono.Cecil.Cil;
-using System;
-using System.Linq;
 
 [module: UnverifiableCode]
 #pragma warning disable CS0618 // Type or member is obsolete
@@ -24,7 +24,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.0.1";
+		public const string ModVer = "1.1.0";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -34,7 +34,9 @@ namespace TPDespair.ContentDisabler
 		public static Dictionary<string, int> ConfigKeys = new Dictionary<string, int>();
 
 		public static List<SurvivorDef> DisabledSurvivors = new List<SurvivorDef>();
-
+		public static List<string> DisabledBodies = new List<string>();
+		public static Dictionary<SpawnCard, string> SpawnCardNames = new Dictionary<SpawnCard, string>();
+		public static Dictionary<SpawnCard, ConfigEntry<bool>> SpawnCardConfigs = new Dictionary<SpawnCard, ConfigEntry<bool>>();
 
 
 		public void Awake()
@@ -43,15 +45,26 @@ namespace TPDespair.ContentDisabler
 			logSource = Logger;
 
 			On.RoR2.ItemCatalog.Init += ItemCatalogInit;
+
 			On.RoR2.EquipmentCatalog.Init += EquipmentCatalogInit;
+
 			On.RoR2.SurvivorCatalog.Init += SurvivorCatalogInit;
 			On.RoR2.UI.LogBook.LogBookController.CanSelectSurvivorBodyEntry += LogBookControllerCanSelectSurvivorBodyEntry;
-            IL.RoR2.CharacterMaster.PickRandomSurvivorBodyPrefab += CharacterMasterPickRandomSurvivorBodyPrefab;
+			IL.RoR2.CharacterMaster.PickRandomSurvivorBodyPrefab += CharacterMasterPickRandomSurvivorBodyPrefabHook;
+
+			On.RoR2.BodyCatalog.Init += BodyCatalogInit;
+			On.RoR2.UI.LogBook.LogBookController.CanSelectMonsterEntry += LogBookControllerCanSelectMonsterEntry;
+
+			On.RoR2.ClassicStageInfo.RebuildCards += ClassicStageInfoRebuildCards;
+			IL.RoR2.ClassicStageInfo.RebuildCards += ClassicStageInfoRebuildCardsHook;
+			SceneDirector.onGenerateInteractableCardSelection += GatherInteractableCards;
+			On.RoR2.SceneDirector.GenerateInteractableCardSelection += SceneDirectorGenerateInteractableCardSelection;
+			On.RoR2.DirectorCard.IsAvailable += DirectorCardIsAvailable;
 		}
 
-        
+		
 
-        private static void ItemCatalogInit(On.RoR2.ItemCatalog.orig_Init orig)
+		private static void ItemCatalogInit(On.RoR2.ItemCatalog.orig_Init orig)
 		{
 			foreach (ItemDef itemDef in ContentManager.itemDefs)
 			{
@@ -72,6 +85,15 @@ namespace TPDespair.ContentDisabler
 
 			orig();
 		}
+
+		private static void AssignDepricatedTier(ItemDef itemDef, ItemTier itemTier)
+		{
+			#pragma warning disable CS0618 // Type or member is obsolete
+			itemDef.deprecatedTier = itemTier;
+			#pragma warning restore CS0618 // Type or member is obsolete
+		}
+
+
 
 		private static void EquipmentCatalogInit(On.RoR2.EquipmentCatalog.orig_Init orig)
 		{
@@ -98,11 +120,13 @@ namespace TPDespair.ContentDisabler
 			orig();
 		}
 
+
+
 		private static void SurvivorCatalogInit(On.RoR2.SurvivorCatalog.orig_Init orig)
 		{
 			foreach (SurvivorDef survivorDef in ContentManager.survivorDefs)
 			{
-				string name = ((ScriptableObject)survivorDef).name;
+				string name = survivorDef.cachedName;
 				if (name == "") name = survivorDef.displayNameToken;
 				if (name == "") name = "UnknownSurvivor";
 
@@ -123,7 +147,7 @@ namespace TPDespair.ContentDisabler
 			orig();
 		}
 
-		private bool LogBookControllerCanSelectSurvivorBodyEntry(On.RoR2.UI.LogBook.LogBookController.orig_CanSelectSurvivorBodyEntry orig, CharacterBody body, Dictionary<RoR2.ExpansionManagement.ExpansionDef, bool> expansionAvailability)
+		private static bool LogBookControllerCanSelectSurvivorBodyEntry(On.RoR2.UI.LogBook.LogBookController.orig_CanSelectSurvivorBodyEntry orig, CharacterBody body, Dictionary<RoR2.ExpansionManagement.ExpansionDef, bool> expansionAvailability)
 		{
 			if (body)
 			{
@@ -137,7 +161,9 @@ namespace TPDespair.ContentDisabler
 			return orig(body, expansionAvailability);
 		}
 
-		private void CharacterMasterPickRandomSurvivorBodyPrefab(ILContext il)
+
+
+		private static void CharacterMasterPickRandomSurvivorBodyPrefabHook(ILContext il)
 		{
 			ILCursor c = new ILCursor(il);
 
@@ -160,7 +186,10 @@ namespace TPDespair.ContentDisabler
 						{
 							survivorDefsList.Remove(survivorDef);
 
-							//LogWarn("Removed Survivor [" + name + "] from Metamorph Choices.");
+							string name = survivorDef.cachedName;
+							if (name == "") name = survivorDef.displayNameToken;
+
+							LogWarn("Removed Survivor [" + name + "] From Metamorph Choices.");
 						}
 					}
 
@@ -176,7 +205,227 @@ namespace TPDespair.ContentDisabler
 
 
 
-		internal static ConfigEntry<bool> ConfigEntry(string section, string key, bool defaultValue, string description)
+		private static void BodyCatalogInit(On.RoR2.BodyCatalog.orig_Init orig)
+		{
+			foreach (GameObject gameObject in ContentManager.bodyPrefabs)
+			{
+				CharacterBody charBody = gameObject.GetComponent<CharacterBody>();
+				if (charBody)
+				{
+					string name = charBody.name;
+					if (name == "") name = charBody.baseNameToken;
+					if (name == "") name = "UnknownBody";
+
+					ConfigEntry<bool> configEntry = ConfigEntry("Body", name, false, "Disable Body : " + name);
+
+					if (configEntry.Value)
+					{
+						if (!DisabledBodies.Contains(name))
+						{
+							DisabledBodies.Add(name);
+						}
+
+						LogWarn("Disabled Body : " + name);
+					}
+				}
+			}
+
+			orig();
+		}
+
+		private static bool LogBookControllerCanSelectMonsterEntry(On.RoR2.UI.LogBook.LogBookController.orig_CanSelectMonsterEntry orig, CharacterBody body, Dictionary<RoR2.ExpansionManagement.ExpansionDef, bool> expansionAvailability)
+		{
+			if (body)
+			{
+				string name = body.name;
+				if (name == "") name = body.baseNameToken;
+
+				if (DisabledBodies.Contains(name)) return false;
+			}
+
+			return orig(body, expansionAvailability);
+		}
+
+
+
+		private static void ClassicStageInfoRebuildCards(On.RoR2.ClassicStageInfo.orig_RebuildCards orig, ClassicStageInfo self)
+		{
+			orig(self);
+
+			ProccessWeightedSelectionEntries(self.monsterSelection);
+		}
+
+		private static void ClassicStageInfoRebuildCardsHook(ILContext il)
+		{
+			ILCursor c = new ILCursor(il);
+
+			Mono.Cecil.MethodReference wat = null;
+
+			bool found = c.TryGotoNext(
+				x => x.MatchLdloc(10),
+				x => x.MatchCallOrCallvirt(out wat)
+			);
+
+			if (found && wat.Name.Contains("Count"))
+			{
+				c.Index += 1;
+
+				c.EmitDelegate<Func<WeightedSelection<ClassicStageInfo.MonsterFamily>, WeightedSelection<ClassicStageInfo.MonsterFamily>>>((selection) =>
+				{
+					for (int i = selection.Count - 1; i >= 0; i--)
+					{
+						WeightedSelection<ClassicStageInfo.MonsterFamily>.ChoiceInfo choiceInfo = selection.GetChoice(i);
+
+						ClassicStageInfo.MonsterFamily family = choiceInfo.value;
+
+						if (!IsMonsterFamilyValid(family))
+						{
+							selection.RemoveChoice(i);
+
+							LogWarn("Removing Invalid MonsterFamily From Selection.");
+						}
+					}
+
+					return selection;
+				});
+				c.Emit(OpCodes.Stloc, 10);
+
+				c.Emit(OpCodes.Ldloc, 10);
+			}
+			else
+			{
+				LogWarn("RebuildCardsHook Failed");
+			}
+
+			//LogWarn(il);
+		}
+
+		private static bool IsMonsterFamilyValid(ClassicStageInfo.MonsterFamily family)
+		{
+			DirectorCardCategorySelection dccs = family.monsterFamilyCategories;
+
+			for (int i = 0; i < dccs.categories.Length; i++)
+			{
+				DirectorCardCategorySelection.Category catagory = dccs.categories[i];
+
+				for (int j = catagory.cards.Length - 1; j >= 0; j--)
+				{
+					DirectorCard directorCard = catagory.cards[j];
+					SpawnCard spawnCard = directorCard.spawnCard;
+
+					if (spawnCard.prefab)
+					{
+						CreateSpawnCardConfig(spawnCard);
+
+						if (IsCharacterSpawnCard(spawnCard))
+						{
+							// any characterSpawnCard in this family is still allowed to spawn so the family is valid
+							if (!SpawnCardConfigs[spawnCard].Value && !DisabledBodies.Contains(SpawnCardNames[spawnCard])) return true;
+						}
+					}
+				}
+			}
+
+			return false;
+		}
+
+		private static void GatherInteractableCards(SceneDirector sceneDirector, DirectorCardCategorySelection dccs)
+		{
+			for (int i = 0; i < dccs.categories.Length; i++)
+			{
+				DirectorCardCategorySelection.Category catagory = dccs.categories[i];
+
+				for (int j = catagory.cards.Length - 1; j >= 0; j--)
+				{
+					DirectorCard directorCard = catagory.cards[j];
+					SpawnCard spawnCard = directorCard.spawnCard;
+
+					CreateSpawnCardConfig(spawnCard);
+				}
+			}
+		}
+
+		private static WeightedSelection<DirectorCard> SceneDirectorGenerateInteractableCardSelection(On.RoR2.SceneDirector.orig_GenerateInteractableCardSelection orig, SceneDirector self)
+		{
+			WeightedSelection<DirectorCard> selection = orig(self);
+
+			ProccessWeightedSelectionEntries(selection);
+
+			return selection;
+		}
+
+		private static void ProccessWeightedSelectionEntries(WeightedSelection<DirectorCard> selection)
+		{
+			if (selection == null) return;
+			
+			for (int i = 0; i < selection.Count; i++)
+			{
+				WeightedSelection<DirectorCard>.ChoiceInfo choiceInfo = selection.GetChoice(i);
+
+				DirectorCard directorCard = choiceInfo.value;
+				SpawnCard spawnCard = directorCard.spawnCard;
+
+				CreateSpawnCardConfig(spawnCard);
+			}
+		}
+
+		private static bool DirectorCardIsAvailable(On.RoR2.DirectorCard.orig_IsAvailable orig, DirectorCard self)
+		{
+			if (self.spawnCard && self.spawnCard.prefab)
+			{
+				SpawnCard spawnCard = self.spawnCard;
+
+				CreateSpawnCardConfig(spawnCard);
+
+				if (IsCharacterSpawnCard(spawnCard))
+				{
+					if (DisabledBodies.Contains(SpawnCardNames[spawnCard])) return false;
+				}
+
+				if (SpawnCardConfigs[spawnCard].Value) return false;
+			}
+
+			return orig(self);
+		}
+
+		private static bool IsCharacterSpawnCard(SpawnCard spawnCard)
+		{
+			if (!SpawnCardNames.ContainsKey(spawnCard))
+			{
+				CharacterMaster charMaster = spawnCard.prefab.GetComponent<CharacterMaster>();
+				if (charMaster && charMaster.bodyPrefab)
+				{
+					CharacterBody charBody = charMaster.bodyPrefab.GetComponent<CharacterBody>();
+					if (charBody)
+					{
+						string name = charBody.name;
+						if (name == "") name = charBody.baseNameToken;
+
+						SpawnCardNames.Add(spawnCard, name);
+					}
+				}
+			}
+
+			return SpawnCardNames.ContainsKey(spawnCard);
+		}
+
+		private static void CreateSpawnCardConfig(SpawnCard spawnCard)
+		{
+			if (!SpawnCardConfigs.ContainsKey(spawnCard))
+			{
+				string name = spawnCard.name;
+				if (name == "") name = "UnknownSpawnCard";
+
+				ConfigEntry<bool> configEntry = ConfigEntry("SpawnCard", name, false, "Disable SpawnCard : " + name);
+				SpawnCardConfigs.Add(spawnCard, configEntry);
+
+				if (configEntry.Value) LogWarn("Disabled SpawnCard : " + name);
+			}
+		}
+
+
+
+		private static ConfigEntry<bool> ConfigEntry(string section, string key, bool defaultValue, string description)
 		{
 			string fullConfigKey = section + "_" + key;
 			string extra = ValidateConfigKey(fullConfigKey);
@@ -206,17 +455,9 @@ namespace TPDespair.ContentDisabler
 			}
 		}
 
-		internal static void AssignDepricatedTier(ItemDef itemDef, ItemTier itemTier)
-		{
-			#pragma warning disable CS0618 // Type or member is obsolete
-			itemDef.deprecatedTier = itemTier;
-			#pragma warning restore CS0618 // Type or member is obsolete
-		}
 
 
-
-
-		internal static void LogWarn(object data)
+		private static void LogWarn(object data)
 		{
 			logSource.LogWarning(data);
 		}
