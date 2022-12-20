@@ -9,6 +9,7 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using RoR2;
 using RoR2.ContentManagement;
+using RoR2.Skills;
 
 using System.Security;
 using System.Security.Permissions;
@@ -24,7 +25,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.1.0";
+		public const string ModVer = "1.2.0";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -33,9 +34,15 @@ namespace TPDespair.ContentDisabler
 
 		public static Dictionary<string, int> ConfigKeys = new Dictionary<string, int>();
 
+		public static List<ArtifactDef> DisabledArtifacts = new List<ArtifactDef>();
+
 		public static List<SurvivorDef> DisabledSurvivors = new List<SurvivorDef>();
+
+		public static Dictionary<string, ConfigEntry<bool>> SkillConfigs = new Dictionary<string, ConfigEntry<bool>>();
+
 		public static List<string> DisabledBodies = new List<string>();
-		public static Dictionary<SpawnCard, string> SpawnCardNames = new Dictionary<SpawnCard, string>();
+
+		public static Dictionary<SpawnCard, string> SpawnCardBodyNames = new Dictionary<SpawnCard, string>();
 		public static Dictionary<SpawnCard, ConfigEntry<bool>> SpawnCardConfigs = new Dictionary<SpawnCard, ConfigEntry<bool>>();
 
 
@@ -44,13 +51,19 @@ namespace TPDespair.ContentDisabler
 			configFile = Config;
 			logSource = Logger;
 
+			RoR2Application.onLoad += ExcludeRuleChoices;
+
 			On.RoR2.ItemCatalog.Init += ItemCatalogInit;
 
 			On.RoR2.EquipmentCatalog.Init += EquipmentCatalogInit;
 
+			On.RoR2.ArtifactCatalog.Init += ArtifactCatalogInit;
+
 			On.RoR2.SurvivorCatalog.Init += SurvivorCatalogInit;
 			On.RoR2.UI.LogBook.LogBookController.CanSelectSurvivorBodyEntry += LogBookControllerCanSelectSurvivorBodyEntry;
 			IL.RoR2.CharacterMaster.PickRandomSurvivorBodyPrefab += CharacterMasterPickRandomSurvivorBodyPrefabHook;
+
+			On.RoR2.Skills.SkillCatalog.Init += SkillCatalogInit;
 
 			On.RoR2.BodyCatalog.Init += BodyCatalogInit;
 			On.RoR2.UI.LogBook.LogBookController.CanSelectMonsterEntry += LogBookControllerCanSelectMonsterEntry;
@@ -62,7 +75,45 @@ namespace TPDespair.ContentDisabler
 			On.RoR2.DirectorCard.IsAvailable += DirectorCardIsAvailable;
 		}
 
-		
+
+
+		private static void ExcludeRuleChoices()
+		{
+			List<string> excluded = new List<string>();
+
+			foreach (ArtifactDef artifactDef in DisabledArtifacts)
+			{
+				string name = artifactDef.cachedName;
+				if (name != null && name != "") excluded.Add("Artifacts." + name);
+
+				name = artifactDef.nameToken;
+				if (name != null && name != "") excluded.Add(name);
+			}
+
+			LogWarn("----- Hiding RuleCatalog Choices -----");
+
+			foreach (RuleDef ruleDef in RuleCatalog.allRuleDefs)
+			{
+				if (ruleDef.choices != null && ruleDef.choices.Count > 0)
+				{
+					//LogWarn("RuleGlobalName : " + ruleDef.globalName);
+
+					if (excluded.Contains(ruleDef.globalName) || excluded.Contains(ruleDef.displayToken))
+					{
+						foreach (RuleChoiceDef ruleDefChoice in ruleDef.choices)
+						{
+							ruleDefChoice.excludeByDefault = true;
+						}
+
+						LogWarn("Hiding RuleCatalog Entries For [" + ruleDef.globalName + " - " + ruleDef.displayToken + "]");
+					}
+				}
+			}
+
+			LogWarn("----- RuleCatalog Choices Hidden -----");
+		}
+
+
 
 		private static void ItemCatalogInit(On.RoR2.ItemCatalog.orig_Init orig)
 		{
@@ -122,6 +173,38 @@ namespace TPDespair.ContentDisabler
 
 
 
+		private void ArtifactCatalogInit(On.RoR2.ArtifactCatalog.orig_Init orig)
+		{
+			foreach (ArtifactDef artifactDef in ContentManager.artifactDefs)
+			{
+				string name = artifactDef.cachedName;
+				if (name == "") name = artifactDef.nameToken;
+				if (name == "") name = "UnknownArtifact";
+
+				if (name == "UnknownArtifact")
+				{
+					LogWarn("Tried to create ConfigEntry for [" + name + "] but it does not have a valid name!");
+				}
+				else
+				{
+					ConfigEntry<bool> configEntry = ConfigEntry("Artifact", name, false, "Disable Artifact : " + name);
+					if (configEntry.Value)
+					{
+						if (!DisabledArtifacts.Contains(artifactDef))
+						{
+							DisabledArtifacts.Add(artifactDef);
+						}
+
+						LogWarn("Disabled Artifact : " + name);
+					}
+				}
+			}
+
+			orig();
+		}
+
+
+
 		private static void SurvivorCatalogInit(On.RoR2.SurvivorCatalog.orig_Init orig)
 		{
 			foreach (SurvivorDef survivorDef in ContentManager.survivorDefs)
@@ -159,6 +242,154 @@ namespace TPDespair.ContentDisabler
 			}
 
 			return orig(body, expansionAvailability);
+		}
+
+
+
+		private static void SkillCatalogInit(On.RoR2.Skills.SkillCatalog.orig_Init orig)
+		{
+			foreach (SkillDef skillDef in ContentManager.skillDefs)
+			{
+				string skillName = GetSkillName(skillDef);
+
+				if (skillName == "" || skillName == "UnknownSkill")
+				{
+					string stateName = GetStateName(skillDef);
+
+					LogWarn("Tried to create ConfigEntry for [" + stateName + "] but its SkillDef does not have a valid name!");
+				}
+				else
+				{
+					CreateSkillConfig(skillName);
+				}
+			}
+
+			LogWarn("----- Rebuilding SkillFamilies -----");
+
+			List<SkillFamily.Variant> variants = new List<SkillFamily.Variant>();
+
+			foreach (SkillFamily skillFamily in ContentManager.skillFamilies)
+			{
+				variants.Clear();
+
+				uint originalIndex = skillFamily.defaultVariantIndex;
+				uint newIndex = 0u;
+
+				for (int i = 0; i < skillFamily.variants.Length; i++)
+				{
+					SkillFamily.Variant variant = skillFamily.variants[i];
+
+					string skillName = GetSkillName(variant.skillDef);
+
+					if (!IsSkillDisabled(skillName))
+					{
+						if (i == originalIndex) newIndex = (uint)variants.Count;
+
+						variants.Add(variant);
+					}
+				}
+
+				if (variants.Count == 0)
+				{
+					SkillDef defaultSkillDef = skillFamily.variants[originalIndex].skillDef;
+
+					string skillName = GetSkillName(defaultSkillDef);
+
+					LogWarn("[" + skillName + "] was enabled because its skill family has no options and it is the default skill variant.");
+
+					variants.Add(skillFamily.variants[originalIndex]);
+				}
+
+				skillFamily.defaultVariantIndex = newIndex;
+				skillFamily.variants = variants.ToArray();
+			}
+
+			LogWarn("----- SkillFamilies Rebuilt -----");
+
+			orig();
+		}
+
+		private static string GetSkillName(SkillDef skillDef)
+		{
+			string name = skillDef.skillName;
+			string token = skillDef.skillNameToken;
+
+			token = token.Trim();
+			name = name.Trim();
+
+			string skillName = "UnknownSkill";
+			if (token != "" && name != "")
+			{
+				skillName = token + " " + name;
+			}
+			else if (token != "")
+			{
+				skillName = token;
+			}
+			else if (name != "")
+			{
+				skillName = name;
+			}
+
+			return skillName.Trim();
+		}
+
+		private static string GetStateName(SkillDef skillDef)
+		{
+			string machine = skillDef.activationStateMachineName;
+			string state = "";
+
+			if (machine == null) machine = "";
+			if (skillDef.activationState.stateType != null) state = skillDef.activationState.typeName;
+			if (state == null) state = "";
+			if (state.Contains(",")) state = state.Substring(0, state.IndexOf(","));
+
+			machine = machine.Trim();
+			state = state.Trim();
+
+			string skillState = "UnknownState";
+			if (machine != "" && state != "")
+			{
+				skillState = machine + " " + state;
+			}
+			else if (state != "")
+			{
+				skillState = state;
+			}
+			else if (machine != "")
+			{
+				skillState = machine;
+			}
+
+			return skillState.Trim();
+		}
+
+		private static void CreateSkillConfig(string skillName)
+		{
+			if (skillName == "" || skillName == "UnknownSkill" || skillName == "UnknownState") return;
+
+			if (!SkillConfigs.ContainsKey(skillName))
+			{
+				ConfigEntry<bool> configEntry = ConfigEntry("Skill", skillName, false, "Disable Skill : " + skillName);
+				SkillConfigs.Add(skillName, configEntry);
+
+				if (configEntry.Value) LogWarn("Disabled Skill : " + skillName);
+			}
+			else
+			{
+				LogWarn("Tried to create another ConfigEntry for [" + skillName +"]. Using the one already available.");
+			}
+		}
+
+		private static bool IsSkillDisabled(string skillName)
+		{
+			if (skillName == "" || skillName == "UnknownSkill") return false;
+
+			if (!SkillConfigs.ContainsKey(skillName)) return false;
+
+			if (SkillConfigs[skillName].Value) return true;
+
+			return false;
 		}
 
 
@@ -320,7 +551,7 @@ namespace TPDespair.ContentDisabler
 						if (IsCharacterSpawnCard(spawnCard))
 						{
 							// any characterSpawnCard in this family is still allowed to spawn so the family is valid
-							if (!SpawnCardConfigs[spawnCard].Value && !DisabledBodies.Contains(SpawnCardNames[spawnCard])) return true;
+							if (!IsSpawnCardDisabled(spawnCard) && !DisabledBodies.Contains(SpawnCardBodyNames[spawnCard])) return true;
 						}
 					}
 				}
@@ -379,10 +610,10 @@ namespace TPDespair.ContentDisabler
 
 				if (IsCharacterSpawnCard(spawnCard))
 				{
-					if (DisabledBodies.Contains(SpawnCardNames[spawnCard])) return false;
+					if (DisabledBodies.Contains(SpawnCardBodyNames[spawnCard])) return false;
 				}
 
-				if (SpawnCardConfigs[spawnCard].Value) return false;
+				if (IsSpawnCardDisabled(spawnCard)) return false;
 			}
 
 			return orig(self);
@@ -390,7 +621,7 @@ namespace TPDespair.ContentDisabler
 
 		private static bool IsCharacterSpawnCard(SpawnCard spawnCard)
 		{
-			if (!SpawnCardNames.ContainsKey(spawnCard))
+			if (!SpawnCardBodyNames.ContainsKey(spawnCard))
 			{
 				CharacterMaster charMaster = spawnCard.prefab.GetComponent<CharacterMaster>();
 				if (charMaster && charMaster.bodyPrefab)
@@ -401,12 +632,12 @@ namespace TPDespair.ContentDisabler
 						string name = charBody.name;
 						if (name == "") name = charBody.baseNameToken;
 
-						SpawnCardNames.Add(spawnCard, name);
+						SpawnCardBodyNames.Add(spawnCard, name);
 					}
 				}
 			}
 
-			return SpawnCardNames.ContainsKey(spawnCard);
+			return SpawnCardBodyNames.ContainsKey(spawnCard);
 		}
 
 		private static void CreateSpawnCardConfig(SpawnCard spawnCard)
@@ -416,11 +647,27 @@ namespace TPDespair.ContentDisabler
 				string name = spawnCard.name;
 				if (name == "") name = "UnknownSpawnCard";
 
-				ConfigEntry<bool> configEntry = ConfigEntry("SpawnCard", name, false, "Disable SpawnCard : " + name);
-				SpawnCardConfigs.Add(spawnCard, configEntry);
+				if (name == "UnknownSpawnCard")
+				{
+					LogWarn("Tried to create ConfigEntry for [" + name + "] but it does not have a valid name!");
+				}
+				else
+				{
+					ConfigEntry<bool> configEntry = ConfigEntry("SpawnCard", name, false, "Disable SpawnCard : " + name);
+					SpawnCardConfigs.Add(spawnCard, configEntry);
 
-				if (configEntry.Value) LogWarn("Disabled SpawnCard : " + name);
+					if (configEntry.Value) LogWarn("Disabled SpawnCard : " + name);
+				}
 			}
+		}
+
+		private static bool IsSpawnCardDisabled(SpawnCard spawnCard)
+		{
+			if (!SpawnCardConfigs.ContainsKey(spawnCard)) return false;
+
+			if (SpawnCardConfigs[spawnCard].Value) return true;
+
+			return false;
 		}
 
 

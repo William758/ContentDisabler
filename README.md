@@ -1,6 +1,6 @@
 # ContentDisabler
 
-This is a last resort for disabling thing in the game, you should use the config from source mod if available.
+This is a last resort for disabling things in the game, you should use the config from source mod if available.
 
 # Items and Equipment
 
@@ -16,11 +16,25 @@ Probably does not prevent items from showing up by other means (untested) :
 
 - HelperItems, FixedRewards, ItemTransformation, BossRewards
 
+# Artifacts
+
+Create a config for every artifact that prevents artifact from being selected in the lobby.
+
+- Only prevents choice in lobby, artifact can be enabled from effects that can enable artifacts during a run.
+
 # Survivors
 
 Create a config for every survivor that prevents survivor from being picked in character select or from rolling in metamorphosis.
 
 - Disabled Survivors are removed from the logbook.
+
+# Skills
+
+Create a config for every named skill that removes said skill from all SkillFamilies.
+
+- Intended for removal of selectable skills in lobby, not sure what might break from disabling other skills.
+
+- If all skills get removed from a SkillFamily, then the default skill will still be available.
 
 # Bodies and SpawnCards
 
@@ -55,6 +69,8 @@ Requires Bepinex and HookGenPatcher.
 Use r2modman or place inside of Risk of Rain 2/Bepinex/Plugins/
 
 ## Changelog:
+
+v1.2.0 - Unnamed SpawnCards no longer generate ConfigEntries. Added support for Artifacts and Skills.
 
 v1.1.0 - SpawnCard support.
 
