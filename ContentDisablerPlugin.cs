@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using MonoMod.Cil;
 using Mono.Cecil.Cil;
@@ -25,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.2.0";
+		public const string ModVer = "1.2.1";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -248,6 +249,15 @@ namespace TPDespair.ContentDisabler
 
 		private static void SkillCatalogInit(On.RoR2.Skills.SkillCatalog.orig_Init orig)
 		{
+			/*
+			CreateSkillConfig("Valdo's Invalid Na'ma'e");
+			CreateSkillConfig("[REDACTED]");
+			CreateSkillConfig("Bingus = Beloved");
+			CreateSkillConfig("\n\tStellaris At 8,\nwait no Stellaris at 8:30");
+			CreateSkillConfig("  Fuahahahahaha!!!  ");
+			CreateSkillConfig("  [Eve'ry[=] T\thi\nng is wr\"o\"ng [ ? = ! ] ");
+			*/
+
 			foreach (SkillDef skillDef in ContentManager.skillDefs)
 			{
 				string skillName = GetSkillName(skillDef);
@@ -675,8 +685,9 @@ namespace TPDespair.ContentDisabler
 		private static ConfigEntry<bool> ConfigEntry(string section, string key, bool defaultValue, string description)
 		{
 			string fullConfigKey = section + "_" + key;
-			string extra = ValidateConfigKey(fullConfigKey);
-			key += extra;
+			key += ValidateConfigKey(fullConfigKey);
+			key = SanitizeConfigKey(key);
+
 			ConfigEntry<bool> configEntry = configFile.Bind(section, key, defaultValue, description);
 
 			return configEntry;
@@ -700,6 +711,52 @@ namespace TPDespair.ContentDisabler
 
 				return "_" + value;
 			}
+		}
+
+		private static readonly char[] InvalidConfigChars = { '=', '\n', '\t', '\\', '"', '\'', '[', ']' };
+
+		private static string SanitizeConfigKey(string configKey)
+		{
+			bool cleaned = false;
+
+			if (configKey.Any(c => InvalidConfigChars.Contains(c)))
+			{
+				LogWarn("ConfigEntry [" + configKey + "] contains invalid characters!");
+
+				configKey = RemoveInvalidChars(configKey);
+
+				cleaned = true;
+			}
+
+			string trimmedKey = configKey.Trim();
+
+			if (configKey != trimmedKey)
+			{
+				LogWarn("ConfigEntry [" + configKey + "] contains trimable whitespace characters!");
+
+				configKey = trimmedKey;
+
+				cleaned = true;
+			}
+
+			if (cleaned)
+			{
+				LogWarn("ConfigEntry key has been changed to [" + configKey + "].");
+			}
+
+			return configKey;
+		}
+
+		private static string RemoveInvalidChars(string str)
+		{
+			StringBuilder sb = new StringBuilder();
+
+			foreach (char c in str)
+			{
+				if (!InvalidConfigChars.Contains(c)) sb.Append(c);
+			}
+
+			return sb.ToString();
 		}
 
 
