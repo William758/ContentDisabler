@@ -53,6 +53,9 @@ namespace TPDespair.ContentDisabler
 			logSource = Logger;
 
 			RoR2Application.onLoad += ExcludeRuleChoices;
+			
+			//added
+			RoR2Application.onLoad += RemoveSkins;
 
 			On.RoR2.ItemCatalog.Init += ItemCatalogInit;
 
@@ -203,8 +206,42 @@ namespace TPDespair.ContentDisabler
 
 			orig();
 		}
-
-
+		
+		//begin added code, originally copied from Radiant Malginance
+		//https://github.com/prodzpod/RadiantMalignance/blob/master/RiskyMonkeyBase/Tweaks/ReorderSkins.cs
+		private static void RemoveSkins()
+		{
+			IEnumerable<GameObject> bodyPrefabs = BodyCatalog.allBodyPrefabs;
+                    	foreach (var bodyPrefab in bodyPrefabs)
+                    	{
+                        	if (bodyPrefab == null) continue;
+                        	BodyIndex idx = BodyCatalog.FindBodyIndex(bodyPrefab);
+                        	SkinDef[] skins = BodyCatalog.GetBodySkins(idx);
+                        	if (skins.Length == 0) continue;
+                        	List<SkinDef> skinsList = new List<SkinDef>(skins);
+                        	bool modified = false;
+                        	for (var i = 0; i < skins.Length; i++)
+                        	{
+					ConfigEntry<bool> configEntry = ConfigEntry("Skin", skins[i].name, false, "Disable " + BodyCatalog.GetBodyName(idx) + " Skin : " + skins[i].name);
+					if (configEntry.Value)
+					{
+						LogWarn("Disabled " + BodyCatalog.GetBodyName(idx) + " Skin : " + skins[i].name);
+					}
+                           		skinsList.Remove(skins[i]);
+                           		modified = true;
+                        	}
+                        	List<string> names = new();
+                        	foreach (var skin in skinsList) names.Add(skin.name);
+                        	if (modified)
+                        	{
+                            		BodyCatalog.skins[(int)idx] = skinsList.ToArray();
+                            		SkinCatalog.skinsByBody[(int)idx] = skinsList.ToArray();
+                            		bodyPrefab.GetComponent<ModelLocator>().modelTransform.gameObject.GetComponent<ModelSkinController>().skins = skinsList.ToArray(); // ??
+                        	}
+                    	}
+			LogWarn("----- Skindefs Rebuilt -----");
+                }
+		//end added code
 
 		private static void SurvivorCatalogInit(On.RoR2.SurvivorCatalog.orig_Init orig)
 		{
