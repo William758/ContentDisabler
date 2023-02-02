@@ -26,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.2.1";
+		public const string ModVer = "1.2.2";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -65,6 +65,8 @@ namespace TPDespair.ContentDisabler
 			IL.RoR2.CharacterMaster.PickRandomSurvivorBodyPrefab += CharacterMasterPickRandomSurvivorBodyPrefabHook;
 
 			On.RoR2.Skills.SkillCatalog.Init += SkillCatalogInit;
+
+			RoR2Application.onLoad += RemoveSkins;
 
 			On.RoR2.BodyCatalog.Init += BodyCatalogInit;
 			On.RoR2.UI.LogBook.LogBookController.CanSelectMonsterEntry += LogBookControllerCanSelectMonsterEntry;
@@ -245,6 +247,46 @@ namespace TPDespair.ContentDisabler
 			return orig(body, expansionAvailability);
 		}
 
+		private static void CharacterMasterPickRandomSurvivorBodyPrefabHook(ILContext il)
+		{
+			ILCursor c = new ILCursor(il);
+
+			bool found = c.TryGotoNext(
+				x => x.MatchStloc(1)
+			);
+
+			if (found)
+			{
+				c.Index += 1;
+
+				c.Emit(OpCodes.Ldloc, 1);
+				c.EmitDelegate<Func<SurvivorDef[], SurvivorDef[]>>((survivorDefs) =>
+				{
+					List<SurvivorDef> survivorDefsList = survivorDefs.ToList();
+
+					foreach (SurvivorDef survivorDef in DisabledSurvivors)
+					{
+						if (survivorDefsList.Contains(survivorDef))
+						{
+							survivorDefsList.Remove(survivorDef);
+
+							string name = survivorDef.cachedName;
+							if (name == "") name = survivorDef.displayNameToken;
+
+							LogWarn("Removed Survivor [" + name + "] From Metamorph Choices.");
+						}
+					}
+
+					return survivorDefsList.ToArray();
+				});
+				c.Emit(OpCodes.Stloc, 1);
+			}
+			else
+			{
+				LogWarn("PickRandomSurvivorHook Failed");
+			}
+		}
+
 
 
 		private static void SkillCatalogInit(On.RoR2.Skills.SkillCatalog.orig_Init orig)
@@ -404,44 +446,82 @@ namespace TPDespair.ContentDisabler
 
 
 
-		private static void CharacterMasterPickRandomSurvivorBodyPrefabHook(ILContext il)
+		private static void RemoveSkins()
 		{
-			ILCursor c = new ILCursor(il);
+			LogWarn("----- Rebuilding SkinDefs -----");
 
-			bool found = c.TryGotoNext(
-				x => x.MatchStloc(1)
-			);
+			List<SkinDef> skinList = new List<SkinDef>();
 
-			if (found)
+			foreach (GameObject bodyPrefab in BodyCatalog.allBodyPrefabs)
 			{
-				c.Index += 1;
-
-				c.Emit(OpCodes.Ldloc, 1);
-				c.EmitDelegate<Func<SurvivorDef[], SurvivorDef[]>>((survivorDefs) =>
+				if (bodyPrefab)
 				{
-					List<SurvivorDef> survivorDefsList = survivorDefs.ToList();
+					bool modified = false;
 
-					foreach (SurvivorDef survivorDef in DisabledSurvivors)
+					BodyIndex bodyIndex = BodyCatalog.FindBodyIndex(bodyPrefab);
+					SkinDef[] skinArray = BodyCatalog.GetBodySkins(bodyIndex);
+
+					if (skinArray.Length > 0)
 					{
-						if (survivorDefsList.Contains(survivorDef))
+						skinList.Clear();
+						string bodyName = GetBodyName(bodyPrefab);
+
+						foreach (SkinDef skinDef in skinArray)
 						{
-							survivorDefsList.Remove(survivorDef);
+							string name = skinDef.nameToken;
+							if (name == "") name = "UnknownSkin";
 
-							string name = survivorDef.cachedName;
-							if (name == "") name = survivorDef.displayNameToken;
+							name = bodyName + " " + name;
 
-							LogWarn("Removed Survivor [" + name + "] From Metamorph Choices.");
+							ConfigEntry<bool> configEntry = ConfigEntry("Skin", name, false, "Disable Skin : " + name);
+							if (configEntry.Value)
+							{
+								modified = true;
+
+								LogWarn("Disabled Skin : " + name);
+							}
+							else
+							{
+								skinList.Add(skinDef);
+							}
+						}
+
+						if (modified)
+						{
+							skinArray = skinList.ToArray();
+
+							BodyCatalog.skins[(int)bodyIndex] = skinArray;
+							SkinCatalog.skinsByBody[(int)bodyIndex] = skinArray;
+
+							ModelLocator modelLocator = bodyPrefab.GetComponent<ModelLocator>();
+							if (modelLocator)
+							{
+								ModelSkinController skinController = modelLocator.modelTransform.gameObject.GetComponent<ModelSkinController>();
+								if (skinController)
+								{
+									skinController.skins = skinArray;
+								}
+							}
 						}
 					}
+				}
+			}
 
-					return survivorDefsList.ToArray();
-				});
-				c.Emit(OpCodes.Stloc, 1);
-			}
-			else
+			LogWarn("----- SkinDefs Rebuilt -----");
+		}
+
+		private static string GetBodyName(GameObject bodyPrefab)
+		{
+			CharacterBody charBody = bodyPrefab.GetComponent<CharacterBody>();
+			if (charBody)
 			{
-				LogWarn("PickRandomSurvivorHook Failed");
+				string name = charBody.name;
+				if (name == "") name = charBody.baseNameToken;
+
+				if (name != "") return name;
 			}
+
+			return "UnknownBody";
 		}
 
 

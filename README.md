@@ -36,6 +36,10 @@ Create a config for every named skill that removes said skill from all SkillFami
 
 - If all skills get removed from a SkillFamily, then the default skill will still be available.
 
+# Skins
+
+Create a config for every skin to remove said skin from being chosen.
+
 # Bodies and SpawnCards
 
 Allows the disabling of monsters and interactables spawned by the Director.
@@ -69,6 +73,8 @@ Requires Bepinex and HookGenPatcher.
 Use r2modman or place inside of Risk of Rain 2/Bepinex/Plugins/
 
 ## Changelog:
+
+v1.2.2 - Added Skin disabling.
 
 v1.2.1 - Added a safeguard against invalid config names preventing the game from loading.
 
