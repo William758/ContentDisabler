@@ -74,6 +74,8 @@ Use r2modman or place inside of Risk of Rain 2/Bepinex/Plugins/
 
 ## Changelog:
 
+v1.2.3 - Added an additional check to find and disable skills from some mods that weren't being detected before.
+
 v1.2.2 - Added Skin disabling.
 
 v1.2.1 - Added a safeguard against invalid config names preventing the game from loading.

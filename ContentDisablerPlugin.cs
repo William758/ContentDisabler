@@ -26,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.2.2";
+		public const string ModVer = "1.2.3";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -40,11 +40,13 @@ namespace TPDespair.ContentDisabler
 		public static List<SurvivorDef> DisabledSurvivors = new List<SurvivorDef>();
 
 		public static Dictionary<string, ConfigEntry<bool>> SkillConfigs = new Dictionary<string, ConfigEntry<bool>>();
+		public static List<string> InvalidSkillStateNames = new List<string>();
 
 		public static List<string> DisabledBodies = new List<string>();
 
 		public static Dictionary<SpawnCard, string> SpawnCardBodyNames = new Dictionary<SpawnCard, string>();
 		public static Dictionary<SpawnCard, ConfigEntry<bool>> SpawnCardConfigs = new Dictionary<SpawnCard, ConfigEntry<bool>>();
+
 
 
 		public void Awake()
@@ -65,6 +67,7 @@ namespace TPDespair.ContentDisabler
 			IL.RoR2.CharacterMaster.PickRandomSurvivorBodyPrefab += CharacterMasterPickRandomSurvivorBodyPrefabHook;
 
 			On.RoR2.Skills.SkillCatalog.Init += SkillCatalogInit;
+			RoR2Application.onLoad += SkillStrip2;
 
 			RoR2Application.onLoad += RemoveSkins;
 
@@ -308,7 +311,7 @@ namespace TPDespair.ContentDisabler
 				{
 					string stateName = GetStateName(skillDef);
 
-					LogWarn("Tried to create ConfigEntry for [" + stateName + "] but its SkillDef does not have a valid name!");
+					LogInvalidSkillStateName(stateName);
 				}
 				else
 				{
@@ -347,7 +350,8 @@ namespace TPDespair.ContentDisabler
 
 					string skillName = GetSkillName(defaultSkillDef);
 
-					LogWarn("[" + skillName + "] was enabled because its skill family has no options and it is the default skill variant.");
+					// this will show up in SkillStrip2
+					//LogWarn("[" + skillName + "] was enabled because its skill family has no options and it is the default skill variant.");
 
 					variants.Add(skillFamily.variants[originalIndex]);
 				}
@@ -359,6 +363,74 @@ namespace TPDespair.ContentDisabler
 			LogWarn("----- SkillFamilies Rebuilt -----");
 
 			orig();
+		}
+
+		private static void SkillStrip2()
+		{
+			LogWarn("----- SkillStrip2 Start -----");
+
+			List<SkillFamily.Variant> variants = new List<SkillFamily.Variant>();
+
+			foreach (GameObject bodyPrefab in BodyCatalog.allBodyPrefabs)
+			{
+				if (bodyPrefab)
+				{
+					var genericSkills = bodyPrefab.GetComponents<GenericSkill>();
+					foreach (GenericSkill genericSkill in genericSkills)
+					{
+						SkillFamily skillFamily = genericSkill.skillFamily;
+
+						if (skillFamily)
+						{
+							variants.Clear();
+
+							uint originalIndex = skillFamily.defaultVariantIndex;
+							uint newIndex = 0u;
+
+							for (int i = 0; i < skillFamily.variants.Length; i++)
+							{
+								SkillFamily.Variant variant = skillFamily.variants[i];
+
+								string skillName = GetSkillName(variant.skillDef);
+
+								if (skillName == "" || skillName == "UnknownSkill")
+								{
+									string stateName = GetStateName(variant.skillDef);
+
+									LogInvalidSkillStateName(stateName);
+								}
+								else if (!SkillConfigs.ContainsKey(skillName))
+								{
+									CreateSkillConfig(skillName);
+								}
+
+								if (!IsSkillDisabled(skillName))
+								{
+									if (i == originalIndex) newIndex = (uint)variants.Count;
+
+									variants.Add(variant);
+								}
+							}
+
+							if (variants.Count == 0)
+							{
+								SkillDef defaultSkillDef = skillFamily.variants[originalIndex].skillDef;
+
+								string skillName = GetSkillName(defaultSkillDef);
+
+								LogWarn("[" + skillName + "] was enabled because its skill family has no options and it is the default skill variant.");
+
+								variants.Add(skillFamily.variants[originalIndex]);
+							}
+
+							skillFamily.defaultVariantIndex = newIndex;
+							skillFamily.variants = variants.ToArray();
+						}
+					}
+				}
+			}
+
+			LogWarn("----- SkillStrip2 End -----");
 		}
 
 		private static string GetSkillName(SkillDef skillDef)
@@ -414,6 +486,18 @@ namespace TPDespair.ContentDisabler
 			}
 
 			return skillState.Trim();
+		}
+
+		private static void LogInvalidSkillStateName(string stateName)
+		{
+			stateName = stateName.Trim();
+
+			if (!InvalidSkillStateNames.Contains(stateName))
+			{
+				InvalidSkillStateNames.Add(stateName);
+
+				LogWarn("Tried to create ConfigEntry for [" + stateName + "] but its SkillDef does not have a valid name!");
+			}
 		}
 
 		private static void CreateSkillConfig(string skillName)
