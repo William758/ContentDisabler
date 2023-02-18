@@ -22,6 +22,10 @@ Create a config for every artifact that prevents artifact from being selected in
 
 - Only prevents choice in lobby, artifact can be enabled from effects that can enable artifacts during a run.
 
+# Difficulties
+
+Create a config for every difficulty that prevents difficulty from being selected in the lobby.
+
 # Survivors
 
 Create a config for every survivor that prevents survivor from being picked in character select or from rolling in metamorphosis.
@@ -35,6 +39,8 @@ Create a config for every named skill that removes said skill from all SkillFami
 - Intended for removal of selectable skills in lobby, not sure what might break from disabling other skills.
 
 - If all skills get removed from a SkillFamily, then the default skill will still be available.
+
+- Config to remove empty SkillFamily (disabled by default)
 
 # Skins
 
@@ -73,6 +79,8 @@ Requires Bepinex and HookGenPatcher.
 Use r2modman or place inside of Risk of Rain 2/Bepinex/Plugins/
 
 ## Changelog:
+
+v1.2.4 - Added support for Difficulties. Config to remove empty SkillFamily.
 
 v1.2.3 - Added an additional check to find and disable skills from some mods that weren't being detected before.
 

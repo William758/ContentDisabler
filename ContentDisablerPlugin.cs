@@ -26,12 +26,16 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.2.3";
+		public const string ModVer = "1.2.4";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
 		public static ConfigFile configFile;
 		public static ManualLogSource logSource;
+
+		public static ConfigEntry<bool> SkillFamilySafeguard { get; set; }
+
+
 
 		public static Dictionary<string, int> ConfigKeys = new Dictionary<string, int>();
 
@@ -53,6 +57,8 @@ namespace TPDespair.ContentDisabler
 		{
 			configFile = Config;
 			logSource = Logger;
+
+			GlobalConfig();
 
 			RoR2Application.onLoad += ExcludeRuleChoices;
 
@@ -83,6 +89,16 @@ namespace TPDespair.ContentDisabler
 
 
 
+		private static void GlobalConfig()
+		{
+			SkillFamilySafeguard = configFile.Bind(
+				"00-General", "SkillFamilySafeguard", true,
+				"Ensures that each skillFamily has at least one skill. Set to false to remove any SkillFamily that becomes empty."
+			);
+		}
+
+
+
 		private static void ExcludeRuleChoices()
 		{
 			List<string> excluded = new List<string>();
@@ -94,6 +110,31 @@ namespace TPDespair.ContentDisabler
 
 				name = artifactDef.nameToken;
 				if (name != null && name != "") excluded.Add(name);
+			}
+
+			RuleDef difficultyRuleDef = RuleCatalog.FindRuleDef("Difficulty");
+			if (difficultyRuleDef != null)
+			{
+				foreach (RuleChoiceDef ruleDefChoice in difficultyRuleDef.choices)
+				{
+					string name = ruleDefChoice.tooltipNameToken;
+					if (name == null || name == "") name = "UnknownDifficulty";
+
+					if (name == "UnknownDifficulty")
+					{
+						LogWarn("Tried to create ConfigEntry for [" + name + "] but it does not have a valid name!");
+					}
+					else
+					{
+						ConfigEntry<bool> configEntry = ConfigEntry("Difficulty", name, false, "Disable Difficulty : " + name);
+						if (configEntry.Value)
+						{
+							excluded.Add(name);
+
+							LogWarn("Disabled Difficulty : " + name);
+						}
+					}
+				}
 			}
 
 			LogWarn("----- Hiding RuleCatalog Choices -----");
@@ -112,6 +153,19 @@ namespace TPDespair.ContentDisabler
 						}
 
 						LogWarn("Hiding RuleCatalog Entries For [" + ruleDef.globalName + " - " + ruleDef.displayToken + "]");
+					}
+
+					if (ruleDef.globalName == "Difficulty")
+					{
+						foreach (RuleChoiceDef ruleDefChoice in ruleDef.choices)
+						{
+							if (excluded.Contains(ruleDefChoice.tooltipNameToken))
+							{
+								ruleDefChoice.excludeByDefault = true;
+
+								LogWarn("Hiding RuleCatalog Entry For [" + ruleDef.globalName + " - " + ruleDefChoice.tooltipNameToken + "]");
+							}
+						}
 					}
 				}
 			}
@@ -346,12 +400,14 @@ namespace TPDespair.ContentDisabler
 
 				if (variants.Count == 0)
 				{
+					/*
 					SkillDef defaultSkillDef = skillFamily.variants[originalIndex].skillDef;
 
 					string skillName = GetSkillName(defaultSkillDef);
 
 					// this will show up in SkillStrip2
-					//LogWarn("[" + skillName + "] was enabled because its skill family has no options and it is the default skill variant.");
+					LogWarn("[" + skillName + "] was enabled because its skill family has no options and it is the default skill variant.");
+					*/
 
 					variants.Add(skillFamily.variants[originalIndex]);
 				}
@@ -412,6 +468,8 @@ namespace TPDespair.ContentDisabler
 								}
 							}
 
+							bool destroySkill = false;
+
 							if (variants.Count == 0)
 							{
 								SkillDef defaultSkillDef = skillFamily.variants[originalIndex].skillDef;
@@ -421,10 +479,40 @@ namespace TPDespair.ContentDisabler
 								LogWarn("[" + skillName + "] was enabled because its skill family has no options and it is the default skill variant.");
 
 								variants.Add(skillFamily.variants[originalIndex]);
+
+								if (!SkillFamilySafeguard.Value) destroySkill = true;
 							}
 
 							skillFamily.defaultVariantIndex = newIndex;
 							skillFamily.variants = variants.ToArray();
+
+							if (destroySkill)
+							{
+								SkillLocator skillLocator = bodyPrefab.GetComponent<SkillLocator>();
+								if (skillLocator)
+								{
+									string bodyName = GetBodyName(bodyPrefab);
+
+									LogWarn("Removing GenericSkill from SkillLocator of [" + bodyName + "].");
+
+									if (skillLocator.primary == genericSkill) skillLocator.primary = null;
+									if (skillLocator.secondary == genericSkill) skillLocator.secondary = null;
+									if (skillLocator.utility == genericSkill) skillLocator.utility = null;
+									if (skillLocator.special == genericSkill) skillLocator.special = null;
+
+									// removes info on skills tab
+									genericSkill.hideInCharacterSelect = true;
+
+									// removes info on loadout tab
+									DestroyImmediate(genericSkill);
+
+									// probably causes some other shenanigans
+								}
+								else
+								{
+									LogWarn("Tried to remove GenericSkill but SkillLocator could not be found!");
+								}
+							}
 						}
 					}
 				}
