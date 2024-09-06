@@ -26,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.2.4";
+		public const string ModVer = "1.3.0";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -698,7 +698,7 @@ namespace TPDespair.ContentDisabler
 
 
 
-		private static void BodyCatalogInit(On.RoR2.BodyCatalog.orig_Init orig)
+		private static System.Collections.IEnumerator BodyCatalogInit(On.RoR2.BodyCatalog.orig_Init orig)
 		{
 			foreach (GameObject gameObject in ContentManager.bodyPrefabs)
 			{
@@ -723,7 +723,7 @@ namespace TPDespair.ContentDisabler
 				}
 			}
 
-			orig();
+			yield return orig();
 		}
 
 		private static bool LogBookControllerCanSelectMonsterEntry(On.RoR2.UI.LogBook.LogBookController.orig_CanSelectMonsterEntry orig, CharacterBody body, Dictionary<RoR2.ExpansionManagement.ExpansionDef, bool> expansionAvailability)
@@ -741,9 +741,9 @@ namespace TPDespair.ContentDisabler
 
 
 
-		private static void ClassicStageInfoRebuildCards(On.RoR2.ClassicStageInfo.orig_RebuildCards orig, ClassicStageInfo self)
+		private static void ClassicStageInfoRebuildCards(On.RoR2.ClassicStageInfo.orig_RebuildCards orig, ClassicStageInfo self, DirectorCardCategorySelection fmc, DirectorCardCategorySelection fic)
 		{
-			orig(self);
+			orig(self, fmc, fic);
 
 			ProccessWeightedSelectionEntries(self.monsterSelection);
 		}

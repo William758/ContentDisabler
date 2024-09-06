@@ -80,6 +80,8 @@ Use r2modman or place inside of Risk of Rain 2/Bepinex/Plugins/
 
 ## Changelog:
 
+v1.3.0 - Updated for SotS.
+
 v1.2.4 - Added support for Difficulties. Config to remove empty SkillFamily.
 
 v1.2.3 - Added an additional check to find and disable skills from some mods that weren't being detected before.
