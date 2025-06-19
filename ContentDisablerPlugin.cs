@@ -26,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.3.0";
+		public const string ModVer = "1.3.1";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -631,7 +631,14 @@ namespace TPDespair.ContentDisabler
 					bool modified = false;
 
 					BodyIndex bodyIndex = BodyCatalog.FindBodyIndex(bodyPrefab);
-					SkinDef[] skinArray = BodyCatalog.GetBodySkins(bodyIndex);
+					SkinDef[] skinArray = SkinCatalog.GetBodySkinDefs(bodyIndex);
+
+					if (skinArray == null)
+					{
+						LogWarn("No Skins found for : " + GetBodyName(bodyPrefab));
+
+						continue;
+					}
 
 					if (skinArray.Length > 0)
 					{
