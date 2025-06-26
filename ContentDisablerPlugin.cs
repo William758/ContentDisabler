@@ -26,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.3.1";
+		public const string ModVer = "1.3.2";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -811,16 +811,18 @@ namespace TPDespair.ContentDisabler
 				for (int j = catagory.cards.Length - 1; j >= 0; j--)
 				{
 					DirectorCard directorCard = catagory.cards[j];
-					SpawnCard spawnCard = directorCard.spawnCard;
-
-					if (spawnCard.prefab)
+					if (directorCard != null)
 					{
-						CreateSpawnCardConfig(spawnCard);
-
-						if (IsCharacterSpawnCard(spawnCard))
+						SpawnCard spawnCard = directorCard.spawnCard;
+						if (spawnCard && spawnCard.prefab)
 						{
-							// any characterSpawnCard in this family is still allowed to spawn so the family is valid
-							if (!IsSpawnCardDisabled(spawnCard) && !DisabledBodies.Contains(SpawnCardBodyNames[spawnCard])) return true;
+							CreateSpawnCardConfig(spawnCard);
+
+							if (IsCharacterSpawnCard(spawnCard))
+							{
+								// any characterSpawnCard in this family is still allowed to spawn so the family is valid
+								if (!IsSpawnCardDisabled(spawnCard) && !DisabledBodies.Contains(SpawnCardBodyNames[spawnCard])) return true;
+							}
 						}
 					}
 				}
@@ -838,9 +840,14 @@ namespace TPDespair.ContentDisabler
 				for (int j = catagory.cards.Length - 1; j >= 0; j--)
 				{
 					DirectorCard directorCard = catagory.cards[j];
-					SpawnCard spawnCard = directorCard.spawnCard;
-
-					CreateSpawnCardConfig(spawnCard);
+					if (directorCard != null)
+					{
+						SpawnCard spawnCard = directorCard.spawnCard;
+						if (spawnCard)
+						{
+							CreateSpawnCardConfig(spawnCard);
+						}
+					}
 				}
 			}
 		}
@@ -863,9 +870,14 @@ namespace TPDespair.ContentDisabler
 				WeightedSelection<DirectorCard>.ChoiceInfo choiceInfo = selection.GetChoice(i);
 
 				DirectorCard directorCard = choiceInfo.value;
-				SpawnCard spawnCard = directorCard.spawnCard;
-
-				CreateSpawnCardConfig(spawnCard);
+				if (directorCard != null)
+				{
+					SpawnCard spawnCard = directorCard.spawnCard;
+					if (spawnCard)
+					{
+						CreateSpawnCardConfig(spawnCard);
+					}
+				}
 			}
 		}
 
@@ -890,6 +902,8 @@ namespace TPDespair.ContentDisabler
 
 		private static bool IsCharacterSpawnCard(SpawnCard spawnCard)
 		{
+			if (spawnCard == null) return false;
+
 			if (!SpawnCardBodyNames.ContainsKey(spawnCard))
 			{
 				CharacterMaster charMaster = spawnCard.prefab.GetComponent<CharacterMaster>();
@@ -911,6 +925,12 @@ namespace TPDespair.ContentDisabler
 
 		private static void CreateSpawnCardConfig(SpawnCard spawnCard)
 		{
+			if (spawnCard == null)
+			{
+				LogWarn("Tried to create ConfigEntry for null SpawnCard!");
+				return;
+			}
+
 			if (!SpawnCardConfigs.ContainsKey(spawnCard))
 			{
 				string name = spawnCard.name;
@@ -919,6 +939,16 @@ namespace TPDespair.ContentDisabler
 				if (name == "UnknownSpawnCard")
 				{
 					LogWarn("Tried to create ConfigEntry for [" + name + "] but it does not have a valid name!");
+					GameObject prefab = spawnCard.prefab;
+					if (prefab)
+					{
+						name = prefab.name;
+						if (name != null && name != "")
+						{
+							LogWarn("--- PrefabName: " + prefab.name);
+						}
+					}
+					
 				}
 				else
 				{
@@ -932,6 +962,8 @@ namespace TPDespair.ContentDisabler
 
 		private static bool IsSpawnCardDisabled(SpawnCard spawnCard)
 		{
+			if (spawnCard == null) return true;
+
 			if (!SpawnCardConfigs.ContainsKey(spawnCard)) return false;
 
 			if (SpawnCardConfigs[spawnCard].Value) return true;

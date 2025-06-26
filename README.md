@@ -80,6 +80,8 @@ Use r2modman or place inside of Risk of Rain 2/Bepinex/Plugins/
 
 ## Changelog:
 
+v1.3.2 - Nullcheck SpawnCards.
+
 v1.3.1 - Fixed Skin disabling.
 
 v1.3.0 - Updated for SotS.
