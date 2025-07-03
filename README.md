@@ -2,6 +2,10 @@
 
 This is a last resort for disabling things in the game, you should use the config from source mod if available.
 
+Each type of content has a config that needs to be enable to generate configs for that section.
+
+Config sections are disabled by default, existing config file will automatically enable edited sections.
+
 # Items and Equipment
 
 Create a config for every item and equipment that allows hiding said item or equipment.
@@ -79,6 +83,8 @@ Requires Bepinex and HookGenPatcher.
 Use r2modman or place inside of Risk of Rain 2/Bepinex/Plugins/
 
 ## Changelog:
+
+v1.3.3 - Added generate configs for each content type. Avoid generating configs for sections that have not been changed.
 
 v1.3.2 - Nullcheck SpawnCards.
 

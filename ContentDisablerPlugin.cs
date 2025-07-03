@@ -1,19 +1,19 @@
-﻿using System;
-using System.Linq;
-using System.Collections.Generic;
-using System.Text;
-using UnityEngine;
-using MonoMod.Cil;
-using Mono.Cecil.Cil;
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using Mono.Cecil.Cil;
+using MonoMod.Cil;
 using RoR2;
 using RoR2.ContentManagement;
 using RoR2.Skills;
-
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.Security;
 using System.Security.Permissions;
+using System.Text;
+using UnityEngine;
 
 [module: UnverifiableCode]
 #pragma warning disable CS0618 // Type or member is obsolete
@@ -26,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.3.2";
+		public const string ModVer = "1.3.3";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -34,6 +34,20 @@ namespace TPDespair.ContentDisabler
 		public static ManualLogSource logSource;
 
 		public static ConfigEntry<bool> SkillFamilySafeguard { get; set; }
+		public static ConfigEntry<bool> ScanConfigSectionsStartup { get; set; }
+		public static ConfigEntry<bool> ScanConfigSectionsFinalize { get; set; }
+
+
+
+		public static ConfigEntry<bool> ConfigItem;
+		public static ConfigEntry<bool> ConfigEquipment;
+		public static ConfigEntry<bool> ConfigArtifact;
+		public static ConfigEntry<bool> ConfigDifficulty;
+		public static ConfigEntry<bool> ConfigSurvivor;
+		public static ConfigEntry<bool> ConfigSkill;
+		public static ConfigEntry<bool> ConfigSkin;
+		public static ConfigEntry<bool> ConfigBody;
+		public static ConfigEntry<bool> ConfigSpawnCard;
 
 
 
@@ -58,33 +72,76 @@ namespace TPDespair.ContentDisabler
 			configFile = Config;
 			logSource = Logger;
 
+
+
 			GlobalConfig();
 
-			RoR2Application.onLoad += ExcludeRuleChoices;
+			if (ScanConfigSectionsStartup.Value)
+			{
+				ConfigStartup();
+			}
 
-			On.RoR2.ItemCatalog.Init += ItemCatalogInit;
 
-			On.RoR2.EquipmentCatalog.Init += EquipmentCatalogInit;
 
-			On.RoR2.ArtifactCatalog.Init += ArtifactCatalogInit;
+			if (ConfigArtifact.Value || ConfigDifficulty.Value)
+			{
+				RoR2Application.onLoad += ExcludeRuleChoices;
+			}
 
-			On.RoR2.SurvivorCatalog.Init += SurvivorCatalogInit;
-			On.RoR2.UI.LogBook.LogBookController.CanSelectSurvivorBodyEntry += LogBookControllerCanSelectSurvivorBodyEntry;
-			IL.RoR2.CharacterMaster.PickRandomSurvivorBodyPrefab += CharacterMasterPickRandomSurvivorBodyPrefabHook;
+			if (ConfigItem.Value)
+			{
+				On.RoR2.ItemCatalog.Init += ItemCatalogInit;
+			}
 
-			On.RoR2.Skills.SkillCatalog.Init += SkillCatalogInit;
-			RoR2Application.onLoad += SkillStrip2;
+			if (ConfigEquipment.Value)
+			{
+				On.RoR2.EquipmentCatalog.Init += EquipmentCatalogInit;
+			}
 
-			RoR2Application.onLoad += RemoveSkins;
+			if (ConfigArtifact.Value)
+			{
+				On.RoR2.ArtifactCatalog.Init += ArtifactCatalogInit;
+			}
 
-			On.RoR2.BodyCatalog.Init += BodyCatalogInit;
-			On.RoR2.UI.LogBook.LogBookController.CanSelectMonsterEntry += LogBookControllerCanSelectMonsterEntry;
+			if (ConfigSurvivor.Value)
+			{
+				On.RoR2.SurvivorCatalog.Init += SurvivorCatalogInit;
+				On.RoR2.UI.LogBook.LogBookController.CanSelectSurvivorBodyEntry += LogBookControllerCanSelectSurvivorBodyEntry;
+				IL.RoR2.CharacterMaster.PickRandomSurvivorBodyPrefab += CharacterMasterPickRandomSurvivorBodyPrefabHook;
+			}
 
-			On.RoR2.ClassicStageInfo.RebuildCards += ClassicStageInfoRebuildCards;
-			IL.RoR2.ClassicStageInfo.RebuildCards += ClassicStageInfoRebuildCardsHook;
-			SceneDirector.onGenerateInteractableCardSelection += GatherInteractableCards;
-			On.RoR2.SceneDirector.GenerateInteractableCardSelection += SceneDirectorGenerateInteractableCardSelection;
-			On.RoR2.DirectorCard.IsAvailable += DirectorCardIsAvailable;
+			if (ConfigSkill.Value)
+			{
+				On.RoR2.Skills.SkillCatalog.Init += SkillCatalogInit;
+				RoR2Application.onLoad += SkillStrip2;
+			}
+
+			if (ConfigSkin.Value)
+			{
+				RoR2Application.onLoad += RemoveSkins;
+			}
+
+			if (ConfigBody.Value)
+			{
+				On.RoR2.BodyCatalog.Init += BodyCatalogInit;
+				On.RoR2.UI.LogBook.LogBookController.CanSelectMonsterEntry += LogBookControllerCanSelectMonsterEntry;
+			}
+
+			if (ConfigSpawnCard.Value)
+			{
+				On.RoR2.ClassicStageInfo.RebuildCards += ClassicStageInfoRebuildCards;
+				IL.RoR2.ClassicStageInfo.RebuildCards += ClassicStageInfoRebuildCardsHook;
+				SceneDirector.onGenerateInteractableCardSelection += GatherInteractableCards;
+				On.RoR2.SceneDirector.GenerateInteractableCardSelection += SceneDirectorGenerateInteractableCardSelection;
+				On.RoR2.DirectorCard.IsAvailable += DirectorCardIsAvailable;
+			}
+
+
+
+			if (ScanConfigSectionsFinalize.Value)
+			{
+				RoR2Application.onLoad += ConfigFinalize;
+			}
 		}
 
 
@@ -95,6 +152,259 @@ namespace TPDespair.ContentDisabler
 				"00-General", "SkillFamilySafeguard", true,
 				"Ensures that each skillFamily has at least one skill. Set to false to remove any SkillFamily that becomes empty."
 			);
+
+			ScanConfigSectionsStartup = configFile.Bind(
+				"00-General", "ScanConfigSectionsStartup", true,
+				"Check config entries on startup and enable Generate Config if any entry in that section is set to true."
+			);
+
+			ScanConfigSectionsFinalize = configFile.Bind(
+				"00-General", "ScanConfigSectionsFinalize", true,
+				"Check config entries on finalize and disable Generate Config if no entry in that section is set to true. Does not apply to SpawnCard."
+			);
+
+
+
+			ConfigItem = configFile.Bind(
+				"01-Generate", "ConfigItem", false,
+				"Generate Item configs and apply patches."
+			);
+			ConfigEquipment = configFile.Bind(
+				"01-Generate", "ConfigEquipment", false,
+				"Generate Equipment configs and apply patches."
+			);
+			ConfigArtifact = configFile.Bind(
+				"01-Generate", "ConfigArtifact", false,
+				"Generate Artifact configs and apply patches."
+			);
+			ConfigDifficulty = configFile.Bind(
+				"01-Generate", "ConfigDifficulty", false,
+				"Generate Difficulty configs and apply patches."
+			);
+			ConfigSurvivor = configFile.Bind(
+				"01-Generate", "ConfigSurvivor", false,
+				"Generate Survivor configs and apply patches."
+			);
+			ConfigSkill = configFile.Bind(
+				"01-Generate", "ConfigSkill", false,
+				"Generate Skill configs and apply patches."
+			);
+			ConfigSkin = configFile.Bind(
+				"01-Generate", "ConfigSkin", false,
+				"Generate Skin configs and apply patches."
+			);
+			ConfigBody = configFile.Bind(
+				"01-Generate", "ConfigBody", false,
+				"Generate Body configs and apply patches."
+			);
+			ConfigSpawnCard = configFile.Bind(
+				"01-Generate", "ConfigSpawnCard", false,
+				"Generate SpawnCard configs and apply patches."
+			);
+		}
+
+		private static void ConfigStartup()
+		{
+			LogWarn("Scanning Config Entries [Startup]");
+
+			Dictionary<ConfigDefinition, string> orphanedEntries = (Dictionary<ConfigDefinition, string>)typeof(ConfigFile).GetProperty("OrphanedEntries", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(configFile);
+			if (orphanedEntries == null || orphanedEntries.Count == 0)
+			{
+				LogWarn("There Are No Config Entries");
+
+				return;
+			}
+
+
+
+			List<string> sectionsToEnable = new List<string>();
+
+			foreach (var entry in orphanedEntries)
+			{
+				string rawValue = entry.Value;
+				if (!string.IsNullOrEmpty(rawValue) && rawValue == "true")
+				{
+					ConfigDefinition def = entry.Key;
+					if (def != null)
+					{
+						string section = def.Section;
+						if (!sectionsToEnable.Contains(section))
+						{
+							LogWarn("Config Section: " + section + " Contains Disabled Entry");
+
+							sectionsToEnable.Add(section);
+						}
+					}
+				}
+			}
+
+
+
+			if (sectionsToEnable.Count == 0)
+			{
+				LogWarn("Found No Sections To Enable");
+
+				return;
+			}
+
+
+
+			if (sectionsToEnable.Contains("Item") && !ConfigItem.Value)
+			{
+				LogWarn("Enabling Item Configs And Patches");
+				ConfigItem.Value = true;
+			}
+
+			if (sectionsToEnable.Contains("Equipment") && !ConfigEquipment.Value)
+			{
+				LogWarn("Enabling Equipment Configs And Patches");
+				ConfigEquipment.Value = true;
+			}
+
+			if (sectionsToEnable.Contains("Artifact") && !ConfigArtifact.Value)
+			{
+				LogWarn("Enabling Artifact Configs And Patches");
+				ConfigArtifact.Value = true;
+			}
+
+			if (sectionsToEnable.Contains("Difficulty") && !ConfigDifficulty.Value)
+			{
+				LogWarn("Enabling Difficulty Configs And Patches");
+				ConfigDifficulty.Value = true;
+			}
+
+			if (sectionsToEnable.Contains("Survivor") && !ConfigSurvivor.Value)
+			{
+				LogWarn("Enabling Survivor Configs And Patches");
+				ConfigSurvivor.Value = true;
+			}
+
+			if (sectionsToEnable.Contains("Skill") && !ConfigSkill.Value)
+			{
+				LogWarn("Enabling Skill Configs And Patches");
+				ConfigSkill.Value = true;
+			}
+
+			if (sectionsToEnable.Contains("Skin") && !ConfigSkin.Value)
+			{
+				LogWarn("Enabling Skin Configs And Patches");
+				ConfigSkin.Value = true;
+			}
+
+			if (sectionsToEnable.Contains("Body") && !ConfigBody.Value)
+			{
+				LogWarn("Enabling Body Configs And Patches");
+				ConfigBody.Value = true;
+			}
+
+			if (sectionsToEnable.Contains("SpawnCard") && !ConfigSpawnCard.Value)
+			{
+				LogWarn("Enabling SpawnCard Configs And Patches");
+				ConfigSpawnCard.Value = true;
+			}
+		}
+
+		private static void ConfigFinalize()
+		{
+			LogWarn("Scanning Config Entries [Finalize]");
+
+			Dictionary<ConfigDefinition, ConfigEntryBase> entries = (Dictionary<ConfigDefinition, ConfigEntryBase>)typeof(ConfigFile).GetProperty("Entries", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(configFile);
+			if (entries == null || entries.Count == 0)
+			{
+				LogWarn("There Are No Config Entries");
+
+				return;
+			}
+
+
+
+			List<string> sectionsToDisable = new List<string>(){ "Item", "Equipment", "Artifact", "Difficulty", "Survivor", "Skill", "Skin", "Body" };
+
+			foreach (var entry in entries)
+			{
+				ConfigEntryBase entryBase = entry.Value;
+				if (entryBase == null) continue;
+
+				string rawValue = entryBase.GetSerializedValue();
+				if (!string.IsNullOrEmpty(rawValue) && rawValue == "true")
+				{
+					ConfigDefinition def = entry.Key;
+					if (def != null)
+					{
+						string section = def.Section;
+						if (sectionsToDisable.Contains(section))
+						{
+							sectionsToDisable.Remove(section);
+						}
+					}
+				}
+			}
+
+
+
+			if (sectionsToDisable.Count == 0)
+			{
+				LogWarn("Found No Sections To Disable");
+
+				return;
+			}
+
+
+
+			foreach (string sec in sectionsToDisable)
+			{
+				LogWarn("Config Section: " + sec + " Is Unused");
+			}
+
+
+
+			if (sectionsToDisable.Contains("Item") && ConfigItem.Value)
+			{
+				LogWarn("Disabling Item Configs And Patches, Wont Apply Until Next Startup.");
+				ConfigItem.Value = false;
+			}
+
+			if (sectionsToDisable.Contains("Equipment") && ConfigEquipment.Value)
+			{
+				LogWarn("Disabling Equipment Configs And Patches, Wont Apply Until Next Startup.");
+				ConfigEquipment.Value = false;
+			}
+
+			if (sectionsToDisable.Contains("Artifact") && ConfigArtifact.Value)
+			{
+				LogWarn("Disabling Artifact Configs And Patches, Wont Apply Until Next Startup.");
+				ConfigArtifact.Value = false;
+			}
+
+			if (sectionsToDisable.Contains("Difficulty") && ConfigDifficulty.Value)
+			{
+				LogWarn("Disabling Difficulty Configs And Patches, Wont Apply Until Next Startup.");
+				ConfigDifficulty.Value = false;
+			}
+
+			if (sectionsToDisable.Contains("Survivor") && ConfigSurvivor.Value)
+			{
+				LogWarn("Disabling Survivor Configs And Patches, Wont Apply Until Next Startup.");
+				ConfigSurvivor.Value = false;
+			}
+
+			if (sectionsToDisable.Contains("Skill") && ConfigSkill.Value)
+			{
+				LogWarn("Disabling Skill Configs And Patches, Wont Apply Until Next Startup.");
+				ConfigSkill.Value = false;
+			}
+
+			if (sectionsToDisable.Contains("Skin") && ConfigSkin.Value)
+			{
+				LogWarn("Disabling Skin Configs And Patches, Wont Apply Until Next Startup.");
+				ConfigSkin.Value = false;
+			}
+
+			if (sectionsToDisable.Contains("Body") && ConfigBody.Value)
+			{
+				LogWarn("Disabling Body Configs And Patches, Wont Apply Until Next Startup.");
+				ConfigBody.Value = false;
+			}
 		}
 
 
@@ -112,26 +422,29 @@ namespace TPDespair.ContentDisabler
 				if (name != null && name != "") excluded.Add(name);
 			}
 
-			RuleDef difficultyRuleDef = RuleCatalog.FindRuleDef("Difficulty");
-			if (difficultyRuleDef != null)
+			if (ConfigDifficulty.Value)
 			{
-				foreach (RuleChoiceDef ruleDefChoice in difficultyRuleDef.choices)
+				RuleDef difficultyRuleDef = RuleCatalog.FindRuleDef("Difficulty");
+				if (difficultyRuleDef != null)
 				{
-					string name = ruleDefChoice.tooltipNameToken;
-					if (name == null || name == "") name = "UnknownDifficulty";
+					foreach (RuleChoiceDef ruleDefChoice in difficultyRuleDef.choices)
+					{
+						string name = ruleDefChoice.tooltipNameToken;
+						if (name == null || name == "") name = "UnknownDifficulty";
 
-					if (name == "UnknownDifficulty")
-					{
-						LogWarn("Tried to create ConfigEntry for [" + name + "] but it does not have a valid name!");
-					}
-					else
-					{
-						ConfigEntry<bool> configEntry = ConfigEntry("Difficulty", name, false, "Disable Difficulty : " + name);
-						if (configEntry.Value)
+						if (name == "UnknownDifficulty")
 						{
-							excluded.Add(name);
+							LogWarn("Tried to create ConfigEntry for [" + name + "] but it does not have a valid name!");
+						}
+						else
+						{
+							ConfigEntry<bool> configEntry = ConfigEntry("Difficulty", name, false, "Disable Difficulty : " + name);
+							if (configEntry.Value)
+							{
+								excluded.Add(name);
 
-							LogWarn("Disabled Difficulty : " + name);
+								LogWarn("Disabled Difficulty : " + name);
+							}
 						}
 					}
 				}
