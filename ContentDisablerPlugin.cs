@@ -26,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.3.3";
+		public const string ModVer = "1.4.0";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -701,6 +701,27 @@ namespace TPDespair.ContentDisabler
 				{
 					SkillFamily.Variant variant = skillFamily.variants[i];
 
+					if (!variant.skillDef)
+					{
+						LogWarn("SkillFamilyVariant.skillDef is null !!!");
+
+						string familyName = (skillFamily as ScriptableObject).name;
+						if (familyName != null)
+						{
+							LogWarn("--SkillFamily Name: " + familyName);
+						}
+
+						var unlock = variant.unlockableDef;
+						if (unlock != null && unlock.nameToken != null)
+						{
+							LogWarn("--Associated Unlock: " + unlock.nameToken);
+						}
+
+						variants.Add(variant);
+
+						continue;
+					}
+
 					string skillName = GetSkillName(variant.skillDef);
 
 					if (!IsSkillDisabled(skillName))
@@ -713,15 +734,6 @@ namespace TPDespair.ContentDisabler
 
 				if (variants.Count == 0)
 				{
-					/*
-					SkillDef defaultSkillDef = skillFamily.variants[originalIndex].skillDef;
-
-					string skillName = GetSkillName(defaultSkillDef);
-
-					// this will show up in SkillStrip2
-					LogWarn("[" + skillName + "] was enabled because its skill family has no options and it is the default skill variant.");
-					*/
-
 					variants.Add(skillFamily.variants[originalIndex]);
 				}
 
@@ -1072,51 +1084,110 @@ namespace TPDespair.ContentDisabler
 		{
 			ILCursor c = new ILCursor(il);
 
-			Mono.Cecil.MethodReference wat = null;
-
 			bool found = c.TryGotoNext(
-				x => x.MatchLdloc(10),
-				x => x.MatchCallOrCallvirt(out wat)
+				x => x.MatchCallOrCallvirt(typeof(DccsPool), "GenerateWeightedCategorySelection")
 			);
 
-			if (found && wat.Name.Contains("Count"))
+			if (found)
 			{
 				c.Index += 1;
 
-				c.EmitDelegate<Func<WeightedSelection<ClassicStageInfo.MonsterFamily>, WeightedSelection<ClassicStageInfo.MonsterFamily>>>((selection) =>
+				c.EmitDelegate<Func<WeightedSelection<DccsPool.Category>, WeightedSelection<DccsPool.Category>>>((weiSel) =>
 				{
-					for (int i = selection.Count - 1; i >= 0; i--)
+					for (int i = weiSel.Count - 1; i >= 0; i--)
 					{
-						WeightedSelection<ClassicStageInfo.MonsterFamily>.ChoiceInfo choiceInfo = selection.GetChoice(i);
+						WeightedSelection<DccsPool.Category>.ChoiceInfo choiceInfo = weiSel.GetChoice(i);
+						DccsPool.Category category = choiceInfo.value;
 
-						ClassicStageInfo.MonsterFamily family = choiceInfo.value;
-
-						if (!IsMonsterFamilyValid(family))
+						if (ShouldRemoveCategory(category))
 						{
-							selection.RemoveChoice(i);
+							weiSel.RemoveChoice(i);
 
 							LogWarn("Removing Invalid MonsterFamily From Selection.");
 						}
 					}
 
-					return selection;
+					return weiSel;
 				});
-				c.Emit(OpCodes.Stloc, 10);
-
-				c.Emit(OpCodes.Ldloc, 10);
 			}
 			else
 			{
 				LogWarn("RebuildCardsHook Failed");
 			}
-
-			//LogWarn(il);
 		}
 
-		private static bool IsMonsterFamilyValid(ClassicStageInfo.MonsterFamily family)
+		private static bool ShouldRemoveCategory(DccsPool.Category category)
 		{
-			DirectorCardCategorySelection dccs = family.monsterFamilyCategories;
+			DirectorCardCategorySelection[] dccsArray = GetAllAllowedFamilyCategoryDccs(category);
+			if (dccsArray != null && dccsArray.Length > 0)
+			{
+				foreach (var dccs in dccsArray)
+				{
+					if (dccs != null && IsMonsterFamilyValid(dccs))
+					{
+						// there is a usable monster family in this category
+						return false;
+					}
+				}
 
+				// none of the monster families are valid
+				return true;
+			}
+
+			// there are no monster families in this category
+			return false;
+		}
+
+		private static DirectorCardCategorySelection[] GetAllAllowedFamilyCategoryDccs(DccsPool.Category category)
+		{
+			List<DirectorCardCategorySelection> dccsList = new List<DirectorCardCategorySelection>();
+
+			DccsPool.PoolEntry[] array = category.alwaysIncluded;
+			for (int i = 0; i < array.Length; i++)
+			{
+				if (array[i].dccs as FamilyDirectorCardCategorySelection != null)
+				{
+					dccsList.Add(array[i].dccs);
+				}
+			}
+
+
+
+			bool conditionsWereMet = false;
+
+			DccsPool.ConditionalPoolEntry[] conditionalPoolEntries = category.includedIfConditionsMet;
+			for (int i = 0; i < conditionalPoolEntries.Length; i++)
+			{
+				DccsPool.ConditionalPoolEntry conditionalPoolEntry = conditionalPoolEntries[i];
+
+				if (conditionalPoolEntry.dccs.IsAvailable() && DCCSBlender.AreConditionsMet(conditionalPoolEntry))
+				{
+					if (conditionalPoolEntry.dccs as FamilyDirectorCardCategorySelection != null)
+					{
+						conditionsWereMet = true;
+
+						dccsList.Add(conditionalPoolEntry.dccs);
+					}
+				}
+			}
+
+			if (!conditionsWereMet)
+			{
+				array = category.includedIfNoConditionsMet;
+				for (int i = 0; i < array.Length; i++)
+				{
+					if (array[i].dccs.IsAvailable() && array[i].dccs as FamilyDirectorCardCategorySelection != null)
+					{
+						dccsList.Add(array[i].dccs);
+					}
+				}
+			}
+
+			return dccsList.ToArray();
+		}
+
+		private static bool IsMonsterFamilyValid(DirectorCardCategorySelection dccs)
+		{
 			for (int i = 0; i < dccs.categories.Length; i++)
 			{
 				DirectorCardCategorySelection.Category catagory = dccs.categories[i];
