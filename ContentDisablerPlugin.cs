@@ -26,7 +26,7 @@ namespace TPDespair.ContentDisabler
 
 	public class ContentDisablerPlugin : BaseUnityPlugin
 	{
-		public const string ModVer = "1.4.0";
+		public const string ModVer = "1.4.1";
 		public const string ModName = "ContentDisabler";
 		public const string ModGuid = "com.TPDespair.ContentDisabler";
 
@@ -1145,7 +1145,7 @@ namespace TPDespair.ContentDisabler
 			DccsPool.PoolEntry[] array = category.alwaysIncluded;
 			for (int i = 0; i < array.Length; i++)
 			{
-				if (array[i].dccs as FamilyDirectorCardCategorySelection != null)
+				if (array[i].dccs != null && array[i].dccs as FamilyDirectorCardCategorySelection != null)
 				{
 					dccsList.Add(array[i].dccs);
 				}
@@ -1160,9 +1160,9 @@ namespace TPDespair.ContentDisabler
 			{
 				DccsPool.ConditionalPoolEntry conditionalPoolEntry = conditionalPoolEntries[i];
 
-				if (conditionalPoolEntry.dccs.IsAvailable() && DCCSBlender.AreConditionsMet(conditionalPoolEntry))
+				if (conditionalPoolEntry.dccs != null && conditionalPoolEntry.dccs as FamilyDirectorCardCategorySelection != null)
 				{
-					if (conditionalPoolEntry.dccs as FamilyDirectorCardCategorySelection != null)
+					if (conditionalPoolEntry.dccs.IsAvailable() && DCCSBlender.AreConditionsMet(conditionalPoolEntry))
 					{
 						conditionsWereMet = true;
 
@@ -1176,9 +1176,12 @@ namespace TPDespair.ContentDisabler
 				array = category.includedIfNoConditionsMet;
 				for (int i = 0; i < array.Length; i++)
 				{
-					if (array[i].dccs.IsAvailable() && array[i].dccs as FamilyDirectorCardCategorySelection != null)
+					if (array[i].dccs != null && array[i].dccs as FamilyDirectorCardCategorySelection != null)
 					{
-						dccsList.Add(array[i].dccs);
+						if (array[i].dccs.IsAvailable())
+						{
+							dccsList.Add(array[i].dccs);
+						}
 					}
 				}
 			}
